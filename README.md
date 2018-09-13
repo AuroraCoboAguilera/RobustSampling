@@ -24,4 +24,5 @@ For more information, used the TFM paper with the results for the mnist dataset 
 - --rescale: (default None) New size of the images if it is desired them to be resized.
 - --finetune: (default False) True / False. Boolean to finetune the network vgg16 pretrained on ImageNet.
 - --layers: (default 3) 1 / 2 / 3 / 4 / 5. Number of the last layers to be trained if it is chosen to do a finetuning.
-- --subset: (defaults None) Maximum number of samples per class in the training set. Only implemented wit cifar10.
+- --subset: (default None) Maximum number of samples per class in the training set. Only implemented with cifar10.
+- --train_samples: (default: None, which is 55000 train samples and 10000 test samples) Number of training samples. Only implemented with MNIST.

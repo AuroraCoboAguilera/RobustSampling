@@ -32,7 +32,7 @@ def build_parser():
 	parser.add_argument('--dropout_rate', default=0.5, help="Dropout rate (default: 0.5) 1.0 no dropout", type=float)
 	parser.add_argument('--filter_std', default=0.1, help="standard deviation for the filters (default: 0.1)", type=float)
 	parser.add_argument('--bias_ini', default=0.0, help="initialization of the bias (default: 0.0)", type=float)
-	parser.add_argument('--repetitionPercentage', default=0.25, help="repetition percentage for the minibatch selection (default: 0.25)", type=float)
+	parser.add_argument('--repetition_percentage', default=0.25, help="repetition percentage for the minibatch selection (default: 0.25)", type=float)
 	parser.add_argument('--save_dir', default=None, help="checkpoint & summaries save dir name extension in tmp(default: None)")
 	parser.add_argument('--gpu_num', default=0, help="CUDA visible device (default: 0)")
 	parser.add_argument("--model_name", default="basic", help="basic / batchsel1 / batchsel2 / batchsel1prob / batchsel2prob (default: basic)")
@@ -45,6 +45,7 @@ def build_parser():
 	parser.add_argument("--finetune", default=False, help="Finetune VGG trained on ImageNet (vgg16 deep)", type=bool)
 	parser.add_argument("--layers", default=3, help="Number of layers for the finetune for vgg16 (default: 3) 1 / 2 / 3 / 4 / 5", type=int)
 	parser.add_argument("--subset", default=None, help="Number max of samples per class in the trainig set (default: None) ", type=int)
+	parser.add_argument("--train_samples", default=None, help="Number of training samples for MNIST (default: None, which is 55000 and 10000 test samples) ", type=int)
 
 	return parser
 
@@ -70,7 +71,7 @@ bias_ini = FLAGS.bias_ini
 deep = FLAGS.deep
 method = FLAGS.model_name
 dataset = FLAGS.dataset
-repetitionPercentage = FLAGS.repetitionPercentage
+repetitionPercentage = FLAGS.repetition_percentage
 
 # Finetune
 # noload_parameters = ['fc8_W', 'fc8_b', 'fc7_W', 'fc7_b', 'fc6_W', 'fc6_b', 'conv5_2_b', 'conv5_2_W', 'conv5_1_b', 'conv5_1_W', 'conv4_2_b', 'conv4_2_W', 'conv4_1_b', 'conv4_1_W', 'conv3_2_b', 'conv3_2_W', 'conv3_1_b', 'conv3_1_W', 'conv2_1_b', 'conv2_1_W', 'conv1_1_b', 'conv1_1_W']
@@ -122,6 +123,21 @@ if dataset == "mnist":
 
 	train_images_re = np.reshape(train_images, [np.shape(train_images)[0], im_size, im_size, im_channels])
 	test_images_re = np.reshape(test_images, [np.shape(test_images)[0], im_size, im_size, im_channels])
+
+	if FLAGS.train_samples < 65000:
+		num_train_s = FLAGS.train_samples
+		num_test_s = 65000 - FLAGS.train_samples
+		print('Number of train samples: ', str(num_train_s))
+		print('Number of test samples: ', str(num_test_s))
+
+		total_images_re = np.concatenate((train_images_re, test_images_re))
+		train_images_re = total_images_re[:num_train_s, :, :, :]
+		test_images_re = total_images_re[num_train_s:, :, :, :]
+		total_labels = np.concatenate((train_labels, test_labels))
+		train_labels = total_labels[:num_train_s, :]
+		test_labels = total_labels[num_train_s:, :]
+
+
 elif dataset == "cifar10":
 	import cifar10
 
