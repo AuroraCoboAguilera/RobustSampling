@@ -1,25 +1,15 @@
 ##################################################################################################################################
 #
-# Data generator for images read directly from a python library (adapted from the one that read txt)
+# Data generator for images read directly from a python library. You can read from txt with class_list,
+# o directly process the images with txt=False and using X,y
 #
 #
-# This code is highly influenced by the implementation of:
-# https://github.com/joelthchao/tensorflow-finetune-flickr-style/dataset.py
-# But changed abit to allow dataaugmentation (yet only horizontal flip) and
-# shuffling of the data.
-# The other source of inspiration is the ImageDataGenerator by @fchollet in the
-# Keras library. But as I needed BGR color format for fine-tuneing AlexNet I
-# wrote my own little generator.
+# This code is highly influenced by the implementation
+# https://github.com/kratzert/finetune_alexnet_with_tensorflow/tree/5d751d62eb4d7149f4e3fd465febf8f07d4cea9d
+#
+# I add the particular functions to generate the next mini-batches according to the VR-M and VR-E.
 #
 #
-#
-# you can read from txt with class_list, o directly process the images with txt=False and using X,y
-#
-#
-# Aurora Cobo Aguilera
-#
-# Creation date: 02/07/2018
-# Modification date: 03/07/2018
 #
 ##################################################################################################################################
 
@@ -33,8 +23,6 @@ from scipy.misc import imread, imresize
 class ImageDataGenerator:
 	def __init__(self, X=None, y=None, class_list=None, horizontal_flip=False, shuffle=False, scale_size=(224, 224), nchannels=3, nb_classes=2, txt=False, inverse=False):
 
-        
-                
 		# Init params
 		self.horizontal_flip = horizontal_flip
 		self.n_classes = nb_classes
@@ -85,6 +73,10 @@ class ImageDataGenerator:
             
 		#store total number of data
 		self.data_size = len(self.labels)
+
+		self.images_select = []
+		self.labels_select = []
+		self.indexs_select = []
 
 	def shuffle_data(self):
 		"""
@@ -186,6 +178,7 @@ class ImageDataGenerator:
 		and labels and loads the images into them into memory
 		loss_previous: The loss obtained for the previous minibatch
 		repetitionPercentage: The percentage of samples of the previous dataset to be repeated, [0, 1]
+		It is used by the VR-M.
 		"""
 
 		# Get next batch of image (path) and labels
@@ -193,35 +186,41 @@ class ImageDataGenerator:
 		labels = self.labels[self.pointer:self.pointer + batch_size]
 		indexs = self.indexs[self.pointer:self.pointer + batch_size]
 
-		if first == False:
+		# In the first iteration of each epoch, we do not have to replace any samples.
+		if first:
+			self.images_select = self.images[:batch_size]
+			self.labels_select = self.labels[:batch_size]
+			self.indexs_select = self.indexs[:batch_size]
+		else:
 			# Number of samples to be repeated in this next batch
 			n_repetitionSamples = int(np.floor(repetitionPercentage*batch_size))
-
-			# Get previous batch of image  and labels
-			originalImgs_p = self.images[self.pointer - batch_size:self.pointer]
-			labels_p = self.labels[self.pointer - batch_size:self.pointer]
-			indexs_p = self.indexs[self.pointer - batch_size:self.pointer]
 
 			# Get the n samples worst classified
 			index_sorted = np.argsort(loss_previous)[::-1][:n_repetitionSamples]
 
 			# Probabilistic method to avoid outlayers, take randomly the half of the worse trained samples
 			if prob:
+				# Compute the new number of repeated samples
 				n_repetitionSamples = int(np.floor(n_repetitionSamples/2))
+				# Randomly shuffle the array with the index of the samples to repeat, in order to later take the first random ones instead of the worst classified
 				np.random.shuffle(index_sorted)
 
-			# Get n random indexs to replace the current samples with the worst classified ones
+			# Get n random indexs to replace the current samples with the worst classified ones (or with the sampled worst classified)
 			index_replace = np.arange(batch_size)
-			np.random.shuffle(index_replace)
+			np.random.shuffle(index_replace)	# The original samples to be replaced are selected randomly
 			index_replace = index_replace[:n_repetitionSamples]
 
+			# Replace samples: the images, the labels and the indentification of the sample to take the count of times that has be repeated in the whole training
 			for i, ind_r in enumerate(index_replace):
-				originalImgs[ind_r] = originalImgs_p[index_sorted[i]]
-				labels[ind_r] = labels_p[index_sorted[i]]
-				indexs[ind_r] = indexs_p[index_sorted[i]]
+				originalImgs[ind_r] = self.images_select[index_sorted[i]]
+				labels[ind_r] = self.labels_select[index_sorted[i]]
+				indexs[ind_r] = self.indexs_select[index_sorted[i]]
 
+			self.images_select = originalImgs[:]
+			self.labels_select = labels[:]
+			self.indexs_select = indexs[:]
 
-		#update pointer
+		# update pointer
 		self.pointer += batch_size
 
 		# Read images
@@ -260,17 +259,17 @@ class ImageDataGenerator:
 		for i in range(len(indexs)):
 			self.count[indexs[i]] = self.count[indexs[i]] + 1
 
-		#return array of images and labels
+		# return array of images and labels
 		return images, one_hot_labels
 
 
 
 	def replace_data(self, losses, repetitionPercentage, prob=False):
 		"""
-		Random replace the images and labels
+		Random replace the images and labels. Used in the VR-E method to replace images of a epoch.
 		"""
 
-		#
+		# Compute the number of samples to the repeated
 		n_repetitionSamples = int(np.floor(repetitionPercentage * len(losses)))
 
 		# Get the n samples worst classified
@@ -281,13 +280,15 @@ class ImageDataGenerator:
 			n_repetitionSamples = int(np.floor(n_repetitionSamples / 2))
 			np.random.shuffle(index_sorted)
 
-		# Get n random indexs to replace the current samples with the worst classified ones
+		# Get n random indexs to replace the original samples with the worst classified ones
 		idx_replace = np.random.permutation(len(self.labels))[:n_repetitionSamples]
 		
 		self.images_select = []
 		self.labels_select = []
 		self.indexs_select = []
+
 		i = 0
+		# Replace the samples
 		for l in np.arange(len(self.labels)):
 			if l in idx_replace:
 				self.images_select.append(self.images[index_sorted[i]])
@@ -299,10 +300,12 @@ class ImageDataGenerator:
 				self.labels_select.append(self.labels[l])
 				self.indexs_select.append(self.indexs[l])
 
+
 	def next_batch_robust_2(self, batch_size, first=True):
 		"""
 		This function gets the next n ( = batch_size) images from the path list
 		and labels and loads the images into them into memory
+		It is used by the VR-E with the images previously replaced by the replace_data() method
 		"""
 		# Get next batch of image (path) and labels
 		if first:
@@ -361,6 +364,8 @@ class ImageDataGenerator:
 		return self.count
 
 
+
 def convert_labels_to_one_hot(labels, num_labels):
+	'''Function to convert labels to one hot format.'''
 	labels = (np.arange(num_labels) == labels[:, None]).astype(np.float32)
 	return labels
